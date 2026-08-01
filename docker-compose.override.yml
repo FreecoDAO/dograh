@@ -1,0 +1,100 @@
+# Dograh — Security Hardening Override
+#
+# This file is automatically merged with docker-compose.yml by Docker Compose.
+# It overrides insecure defaults without modifying the upstream compose file,
+# making it easy to track and revert security changes.
+#
+# Security issues addressed (from audit dated 2026-07-27):
+#   1. DB/Redis ports exposed to 0.0.0.0 → bound to 127.0.0.1
+#   2. API port 8000 exposed to 0.0.0.0 → bound to 127.0.0.1
+#   3. Telemetry enabled by default → disabled (opt-in)
+#   4. Hardcoded PostHog API key → removed
+#   5. FORWARDED_ALLOW_IPS="*" → restricted to Docker bridge subnet
+#   6. No resource limits → added memory/CPU caps
+#   7. No no-new-privileges → added to all services
+#   8. MinIO CORS wildcard → restricted to localhost
+#
+# Usage: Place alongside docker-compose.yml. Docker Compose merges automatically.
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  minio:
+    environment:
+      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:3010,http://127.0.0.1:3010"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  api:
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Disable telemetry by default — opt-in, not opt-out
+      ENABLE_TELEMETRY: "${ENABLE_TELEMETRY:-false}"
+      # Remove hardcoded PostHog key — must be set explicitly if telemetry is enabled
+      POSTHOG_API_KEY: "${POSTHOG_API_KEY:-}"
+      # Restrict trusted proxies to Docker bridge subnet instead of "*"
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-172.16.0.0/12}"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+
+  ui:
+    environment:
+      # Disable telemetry in the UI as well
+      ENABLE_TELEMETRY: "${ENABLE_TELEMETRY:-false}"
+      POSTHOG_KEY: "${POSTHOG_API_KEY:-}"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  coturn:
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  nginx:
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
