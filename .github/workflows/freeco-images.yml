@@ -1,0 +1,63 @@
+# Build FreEco.ai's own dograh images from this fork.
+#
+# FreEco.ai ran upstream's published images (docker.io/dograhai/*), so this
+# fork -- the code that was actually audited -- was never what ran. This builds
+# the API and UI from the fork and publishes them to this account's registry,
+# so the deployed images are traceable to a commit here.
+#
+# It needs no secrets: GitHub's own runner token can push to this repository
+# owner's container registry. Upstream's docker-image.yml expects Docker Hub
+# and GHCR credentials this fork does not hold, which is why it is not used.
+name: FreEco images
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: freeco-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: dograh-api
+            dockerfile: api/Dockerfile
+          - name: dograh-ui
+            dockerfile: ui/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image name (registry paths must be lowercase)
+        id: img
+        run: echo "repo=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          # The commit tag is what FreEco.ai pins to; `latest` is a convenience.
+          tags: |
+            ${{ steps.img.outputs.repo }}:${{ github.sha }}
+            ${{ steps.img.outputs.repo }}:latest
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
